@@ -83,6 +83,22 @@ describe('category filters', () => {
 		expect(store.filteredChannels.map((c) => c.Id)).toEqual(['c110']);
 		expect(store.hasProgramsFor('c110')).toBe(true);
 	});
+
+	test('a channel group keeps the channels tagged with it, wherever they sit', async () => {
+		const channels = channelList(120);
+		channels[3].Tags = ['Sports'];
+		channels[110].Tags = ['News', 'Sports'];
+		channels[111].Tags = ['News'];
+		const api = fakeApi({channels});
+		const store = createLiveTvGuideStore(api, {now: () => at(7, 10)});
+		await store.load({windowStart: at(7, 0)});
+		store.setFilter('group:Sports');
+		await flush();
+		expect(store.filteredChannels.map((c) => c.Id)).toEqual(['c3', 'c110']);
+		expect(store.hasProgramsFor('c110')).toBe(true);
+		expect(store.programsForChannel('c110')).toHaveLength(1);
+		expect(api.calls.every((call) => call.category === undefined)).toBe(true);
+	});
 });
 
 describe('moving the window', () => {

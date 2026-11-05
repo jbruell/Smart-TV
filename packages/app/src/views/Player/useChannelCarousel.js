@@ -4,7 +4,7 @@ import $L from '@enact/i18n/$L';
 import {api as jellyfinApi, getServerUrl} from '../../services/jellyfinApi';
 import {createChannelCarouselPrewarm} from '../../services/channelCarouselPrewarm';
 import {setLiveTvLastChannelId} from '../../services/liveTvLastChannel';
-import {channelComparator} from '../../utils/liveTvGuide';
+import {channelComparator, channelInFilter, groupFilters} from '../../utils/liveTvGuide';
 
 const normalizeServer = (url) => (url || '').replace(/\/+$/, '').toLowerCase();
 
@@ -27,7 +27,7 @@ const NOTICE_MS = 4000;
 // A channel picked in the carousel has to start playing before the carousel goes away. When it
 // doesn't, the channel that was working plays again and the carousel stays up on it. The player
 // reports playback starting through markChannelPlaying, and a failure through error.
-const useChannelCarousel = ({item, isLiveTV, liveTvChannels, sortBy, error, controlsVisible, showControls, hideControls, setFocusRow, onSwitchChannel}) => {
+const useChannelCarousel = ({item, isLiveTV, liveTvChannels, sortBy, groupKey, error, controlsVisible, showControls, hideControls, setFocusRow, onSwitchChannel, onGroupChange}) => {
 	const [lineup, setLineup] = useState([]);
 	const [open, setOpen] = useState(false);
 	const [selectionRevision, setSelectionRevision] = useState(0);
@@ -206,6 +206,28 @@ const useChannelCarousel = ({item, isLiveTV, liveTvChannels, sortBy, error, cont
 		startSwitch(channels[(index + step + channels.length) % channels.length], itemRef.current);
 	}, [isLiveTV, startSwitch]);
 
+	// Steps through All and the channel groups, the guide's chips, and makes the next one the lineup.
+	// The channel playing stays when it's in that group, otherwise its first channel plays.
+	const allChannelsRef = useRef(null);
+	const stepGroup = useCallback(async (step) => {
+		if (!isLiveTV || !carouselApi || switchRef.current) return;
+		if (!allChannelsRef.current) {
+			const response = await carouselApi.getLiveTvChannels().catch(() => null);
+			if (!response?.Items?.length) return;
+			allChannelsRef.current = [...response.Items].sort(channelComparator(sortBy));
+		}
+		const all = allChannelsRef.current;
+		const keys = ['all'].concat(groupFilters(all).map((filter) => filter.key));
+		const key = keys[(Math.max(keys.indexOf(groupKey), 0) + step + keys.length) % keys.length];
+		const channels = all.filter((channel) => channelInFilter(key, channel));
+		if (!channels.length || switchRef.current) return;
+		onGroupChange?.(key);
+		lineupRef.current = channels;
+		setLineup(channels);
+		if (!channels.some((channel) => channel.Id === itemRef.current?.Id)) startSwitch(channels[0], itemRef.current);
+		showControls();
+	}, [isLiveTV, carouselApi, sortBy, groupKey, onGroupChange, startSwitch, showControls]);
+
 	const carouselProps = open ? {
 		prewarm: prewarmRef.current,
 		api: carouselApi,
@@ -222,7 +244,7 @@ const useChannelCarousel = ({item, isLiveTV, liveTvChannels, sortBy, error, cont
 	// A recording made from the player marks its card without waiting on the hourly refresh.
 	const refreshRecordings = useCallback(() => prewarmRef.current?.refresh(), []);
 
-	return {carouselOpenRef: openRef, openCarousel, stepChannel, markChannelPlaying, refreshRecordings, carouselProps};
+	return {carouselOpenRef: openRef, openCarousel, stepChannel, stepGroup, markChannelPlaying, refreshRecordings, carouselProps};
 };
 
 export default useChannelCarousel;

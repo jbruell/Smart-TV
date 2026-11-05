@@ -341,6 +341,7 @@ export const defaultSettings = {
 	videoStartDelay: 0,
 	liveTvSkipGuide: false,
 	liveTvChannelSortBy: 'number',
+	liveTvGuideFilter: 'all',
 	stereoUpmixEnabled: false,
 	ac3Passthrough: true,
 	eac3Passthrough: true,

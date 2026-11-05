@@ -1,12 +1,13 @@
 import {renderHook, act} from '@testing-library/react';
 
+import {api} from '../../services/jellyfinApi';
 import useChannelCarousel from './useChannelCarousel';
 
 jest.mock('@enact/spotlight', () => ({focus: () => {}}));
 
 jest.mock('../../services/jellyfinApi', () => ({
 	getServerUrl: () => 'http://server',
-	api: {getLiveTvChannels: () => Promise.resolve({Items: []})}
+	api: {getLiveTvChannels: jest.fn(() => Promise.resolve({Items: []}))}
 }));
 
 jest.mock('../../services/channelCarouselPrewarm', () => ({
@@ -90,4 +91,19 @@ test('picking another channel while a switch is running does nothing', () => {
 	const {result, onSwitchChannel} = setup();
 	act(() => result.current.carouselProps.onSelect(channelA));
 	expect(onSwitchChannel).toHaveBeenCalledTimes(1);
+});
+
+test('green makes the next channel group the lineup and plays its first channel', async () => {
+	const news = {Id: 'n', Name: 'News', Type: 'TvChannel', Tags: ['News']};
+	api.getLiveTvChannels.mockResolvedValueOnce({Items: [channelA, channelB, news]});
+	const onSwitchChannel = jest.fn();
+	const onGroupChange = jest.fn();
+	const {result} = renderHook(() => useChannelCarousel({
+		item: channelA, isLiveTV: true, liveTvChannels: lineup, sortBy: 'number', groupKey: 'all', error: null,
+		controlsVisible: false, showControls: () => {}, hideControls: () => {}, setFocusRow: () => {},
+		onSwitchChannel, onGroupChange
+	}));
+	await act(() => result.current.stepGroup(1));
+	expect(onGroupChange).toHaveBeenCalledWith('group:News');
+	expect(onSwitchChannel).toHaveBeenCalledWith(news);
 });

@@ -824,7 +824,7 @@ export const api = {
 	// Without a limit this returns the full lineup, which the guide sorts and
 	// filters client side the way moonfin-core does.
 	getLiveTvChannels: (startIndex = 0, limit) =>
-		request(`/LiveTv/Channels?UserId=${currentUser}&EnableFavoriteSorting=true&Fields=ImageTags,UserData&EnableTotalRecordCount=false&StartIndex=${startIndex}${limit ? `&Limit=${limit}` : ''}`),
+		request(`/LiveTv/Channels?UserId=${currentUser}&EnableFavoriteSorting=true&Fields=ImageTags,UserData,Tags&EnableTotalRecordCount=false&StartIndex=${startIndex}${limit ? `&Limit=${limit}` : ''}`),
 
 	getLiveTvPrograms: (channelIds, startDate, endDate, {category} = {}) => {
 		const ids = Array.isArray(channelIds) ? channelIds : [channelIds];

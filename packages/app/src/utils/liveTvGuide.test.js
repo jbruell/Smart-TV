@@ -1,7 +1,7 @@
 import {
 	CELL_KINDS, artworkSource, buildRowCells, carouselLayoutFor, carouselNeighborhood, categoryTags, channelComparator,
-	channelIndexFor, clampAnchorInto, episodeLine, floorToHalfHour, genreFor, guideWindowFor,
-	matchesFilter, programAiringAt, reanchorSelection, resolveCellIndexAt
+	channelIndexFor, clampAnchorInto, episodeLine, floorToHalfHour, genreFor, groupFilters, guideWindowFor,
+	isCategoryFilter, matchesFilter, programAiringAt, reanchorSelection, resolveCellIndexAt
 } from './liveTvGuide';
 
 const at = (hh, mm) => new Date(2026, 8, 22, hh, mm, 0, 0).getTime();
@@ -184,5 +184,17 @@ describe('channel carousel', () => {
 	test('asks for the run around the centred channel, wrapping', () => {
 		const channels = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map((Id) => ({Id}));
 		expect(carouselNeighborhood(channels, 'a', 3)).toEqual(['f', 'g', 'h', 'a', 'b', 'c', 'd']);
+	});
+});
+
+describe('channel groups', () => {
+	test('one chip per tag, by name, and none are categories', () => {
+		const filters = groupFilters([{Tags: ['Sports', 'News']}, {}, {Tags: ['Kids', 'Sports']}]);
+		expect(filters).toEqual([
+			{key: 'group:Kids', label: 'Kids'},
+			{key: 'group:News', label: 'News'},
+			{key: 'group:Sports', label: 'Sports'}
+		]);
+		expect(filters.some((filter) => isCategoryFilter(filter.key))).toBe(false);
 	});
 });

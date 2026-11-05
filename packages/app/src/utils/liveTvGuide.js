@@ -191,7 +191,28 @@ export const GUIDE_FILTERS = [
 
 const filterByKey = (key) => GUIDE_FILTERS.find((filter) => filter.key === key) || GUIDE_FILTERS[0];
 
-export const isCategoryFilter = (key) => key !== 'all' && key !== 'favorites';
+// A channel group is a tag the server puts on the channel, such as one a playlist's group-title
+// becomes, so a group chip's key carries the tag.
+const GROUP_PREFIX = 'group:';
+export const isGroupFilter = (key) => key.indexOf(GROUP_PREFIX) === 0;
+
+export const isCategoryFilter = (key) => key !== 'all' && key !== 'favorites' && !isGroupFilter(key);
+
+// Favorites and groups keep or drop whole channels rather than programs.
+export const channelInFilter = (key, channel) => {
+	if (key === 'favorites') return channel.UserData?.IsFavorite === true;
+	if (isGroupFilter(key)) return (channel.Tags || []).indexOf(key.slice(GROUP_PREFIX.length)) >= 0;
+	return true;
+};
+
+// One chip per tag the lineup carries, by name.
+export const groupFilters = (channels) => {
+	const tags = [];
+	channels.forEach((channel) => (channel.Tags || []).forEach((tag) => {
+		if (tags.indexOf(tag) < 0) tags.push(tag);
+	}));
+	return tags.sort((a, b) => a.localeCompare(b)).map((tag) => ({key: GROUP_PREFIX + tag, label: tag}));
+};
 
 // The categories the server can filter on itself. Premiere isn't one, so it walks the lineup in
 // ordinary batches and is matched here.

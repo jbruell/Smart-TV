@@ -6,7 +6,7 @@
 
 import {
 	DEFAULT_GUIDE_WINDOW_MS, SERVER_FILTERED_CATEGORIES, artworkSource, channelComparator,
-	isCategoryFilter, matchesFilter, programEnd, programStart
+	channelInFilter, isCategoryFilter, isGroupFilter, matchesFilter, programEnd, programStart
 } from '../utils/liveTvGuide';
 
 const MINUTE = 60000;
@@ -46,7 +46,7 @@ const contentKeyFor = (program) => {
 	return episode ? `${program.Name}\u0000${episode}` : `${program.Name}\u0000CH\u0000${program.ChannelId}`;
 };
 
-export const createLiveTvGuideStore = (api, {sortBy = 'number', now = () => Date.now()} = {}) => {
+export const createLiveTvGuideStore = (api, {sortBy = 'number', filter: initialFilter = 'all', now = () => Date.now()} = {}) => {
 	const listeners = new Set();
 	// Only the hero shows artwork, so a lookup landing wakes it rather than the whole grid.
 	const artworkListeners = new Set();
@@ -56,7 +56,7 @@ export const createLiveTvGuideStore = (api, {sortBy = 'number', now = () => Date
 	let error = null;
 	let channels = [];
 	let sort = sortBy;
-	let filter = 'all';
+	let filter = initialFilter;
 
 	let guideWindow = DEFAULT_GUIDE_WINDOW_MS;
 	let guideDate = now();
@@ -93,13 +93,12 @@ export const createLiveTvGuideStore = (api, {sortBy = 'number', now = () => Date
 
 	const programsForChannel = (id) => {
 		if (isCategoryFilter(filter)) return categoryPrograms.get(id) || [];
-		const all = programsByChannel.get(id) || [];
-		return filter === 'all' || filter === 'favorites' ? all : all.filter((p) => matchesFilter(filter, p));
+		return programsByChannel.get(id) || [];
 	};
 
 	const filteredChannels = () => {
 		if (filter === 'all') return channels;
-		if (filter === 'favorites') return channels.filter((channel) => channel.UserData?.IsFavorite === true);
+		if (!isCategoryFilter(filter)) return channels.filter((channel) => channelInFilter(filter, channel));
 		if (categoryLoadedFor !== filter) return [];
 		return channels.filter((channel) => categoryPrograms.has(channel.Id));
 	};
@@ -243,6 +242,8 @@ export const createLiveTvGuideStore = (api, {sortBy = 'number', now = () => Date
 		const response = await api.getLiveTvChannels();
 		if (disposed || generation !== loadGeneration) return false;
 		channels = [...(response?.Items || [])].sort(channelComparator(sort));
+		// A remembered group the lineup no longer carries would leave the guide empty.
+		if (isGroupFilter(filter) && !filteredChannels().length) filter = 'all';
 		return true;
 	};
 
@@ -373,10 +374,8 @@ export const createLiveTvGuideStore = (api, {sortBy = 'number', now = () => Date
 			return;
 		}
 		notify();
-		// Favorites can sit anywhere in the lineup, past what has loaded so far.
-		if (value === 'favorites') {
-			ensureProgramsForChannels(channels.filter((c) => c.UserData?.IsFavorite === true).map((c) => c.Id));
-		}
+		// Favorites and group channels can sit anywhere in the lineup, past what has loaded so far.
+		if (value !== 'all' && !isCategoryFilter(value)) ensureProgramsForChannels(filteredChannels().map((c) => c.Id));
 	};
 
 	const setDate = async (date) => {
@@ -830,6 +829,7 @@ export const createLiveTvGuideStore = (api, {sortBy = 'number', now = () => Date
 		get windowStart () { return windowStart; },
 		get windowEnd () { return windowEnd; },
 		get atLivePosition () { return atLivePosition; },
+		get channels () { return channels; },
 		get filteredChannels () { return filteredChannels(); },
 		get hasMorePrograms () { return hasMorePrograms(); },
 		get programsHighWater () { return isCategoryFilter(filter) ? categoryPrograms.size : programsHighWater; },

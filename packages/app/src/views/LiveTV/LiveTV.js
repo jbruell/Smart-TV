@@ -15,8 +15,8 @@ import {createLiveTvGuideStore} from '../../services/liveTvGuideStore';
 import {getLiveTvLastChannelId, loadLiveTvLastChannel} from '../../services/liveTvLastChannel';
 import {
 	CELL_KINDS, CHANNEL_SORTS, DEFAULT_SERIES_CHOICE, GUIDE_FILTERS, TV_CANVAS_SCALE, artworkSource, buildRowCells,
-	clampAnchorInto, episodeLine, episodeTitleOf, floorToHalfHour, genreFor, guideWindowFor, guideLeftEdge, hasSeriesTimer,
-	hasTimer, isLiveAt, programAiringAt, programEnd, programStart, progressAt, reanchorSelection,
+	clampAnchorInto, episodeLine, episodeTitleOf, floorToHalfHour, genreFor, groupFilters, guideWindowFor, guideLeftEdge,
+	hasSeriesTimer, hasTimer, isGroupFilter, isLiveAt, programAiringAt, programEnd, programStart, progressAt, reanchorSelection,
 	recordingMark, resolveCellIndexAt, seasonEpisodeLabel, seriesChoiceFlags, seriesChoiceOf
 } from '../../utils/liveTvGuide';
 import SeriesEpisodeChoices from '../../components/SeriesEpisodeChoices';
@@ -85,7 +85,6 @@ const channelSpotlightId = (channelId) => `guide-ch-${channelId}`;
 const cellSpotlightId = (channelId, index) => `guide-cell-${channelId}-${index}`;
 const barSpotlightId = (index) => `guide-bar-${index}`;
 const chipSpotlightId = (index) => `guide-chip-${index}`;
-const PLEX_MISSING_FILTERS = ['sports', 'news', 'kids'];
 
 const isLoadingCells = (cells) => cells.length === 1 && cells[0].kind === CELL_KINDS.loading;
 
@@ -237,18 +236,14 @@ const GuideHeroHost = ({store, emitter, focusRef, serverUrl, clockDisplay, versi
 };
 
 const LiveTV = ({onPlayChannel, onRecordings, backHandlerRef}) => {
-	const {api, serverUrl, serverType} = useAuth();
-	// Plex's guide carries no sports, news or kids flags, so those would always come up empty.
-	const guideFilters = useMemo(() => (serverType === 'plex'
-		? GUIDE_FILTERS.filter((filter) => !PLEX_MISSING_FILTERS.includes(filter.key))
-		: GUIDE_FILTERS), [serverType]);
+	const {api, serverUrl} = useAuth();
 	const {settings, updateSetting} = useSettings();
 	const clockDisplay = settings.clockDisplay;
 	const {prompt: openRecordPrompt, setLoading: setRecordPromptLoading, handleBack: handleRecordPromptBack, element: recordPromptElement} = useRecordPrompt(clockDisplay);
 
 	const storeRef = useRef(null);
 	if (!storeRef.current) {
-		storeRef.current = createLiveTvGuideStore(api, {sortBy: normalizeSort(settings.liveTvChannelSortBy)});
+		storeRef.current = createLiveTvGuideStore(api, {sortBy: normalizeSort(settings.liveTvChannelSortBy), filter: settings.liveTvGuideFilter});
 	}
 	const store = storeRef.current;
 	const emitter = useMemo(() => createEmitter(), []);
@@ -267,6 +262,8 @@ const LiveTV = ({onPlayChannel, onRecordings, backHandlerRef}) => {
 	const rowHeightRef = useRef(ROW_HEIGHT);
 	const cellsCacheRef = useRef({version: -1, byChannel: new Map()});
 	const filterRailRef = useRef(null);
+	const stepFilterRef = useRef(null);
+	const guideFiltersRef = useRef([]);
 	const selectionRef = useRef(null);
 	const pendingMoveRef = useRef(null);
 	const lastDpadRef = useRef(0);
@@ -982,6 +979,10 @@ const LiveTV = ({onPlayChannel, onRecordings, backHandlerRef}) => {
 			if (keyCode >= KEYS.NUM_0 && keyCode <= KEYS.NUM_9) {
 				e.preventDefault();
 				handleChannelNumber(String.fromCharCode(keyCode));
+			} else if (keyCode === KEYS.RED || keyCode === KEYS.GREEN) {
+				// Red and green step through the chips from wherever focus is.
+				e.preventDefault();
+				stepFilterRef.current?.(keyCode === KEYS.GREEN ? 1 : -1);
 			}
 		};
 		window.addEventListener('keydown', handleKeyDown, true);
@@ -1067,8 +1068,15 @@ const LiveTV = ({onPlayChannel, onRecordings, backHandlerRef}) => {
 
 	const handleFilterSelect = useCallback((key) => {
 		pendingMoveRef.current = null;
+		updateSetting('liveTvGuideFilter', key);
 		store.setFilter(key);
-	}, [store]);
+	}, [store, updateSetting]);
+
+	stepFilterRef.current = (step) => {
+		const filters = guideFiltersRef.current;
+		const index = filters.findIndex((filter) => filter.key === store.filter);
+		handleFilterSelect(filters[(Math.max(index, 0) + step + filters.length) % filters.length].key);
+	};
 
 	const handleChipFocus = useCallback((e) => {
 		focusRef.current = {...focusRef.current, area: 'chips'};
@@ -1192,6 +1200,9 @@ const LiveTV = ({onPlayChannel, onRecordings, backHandlerRef}) => {
 	const favoriteChannel = programChannel?.UserData?.IsFavorite === true;
 	const programEpisodeLine = episodeLine(program);
 	const guideDay = new Date(store.guideDate).toDateString();
+	// All, then one chip per channel group. The program categories and favorites aren't offered.
+	const guideFilters = useMemo(() => [GUIDE_FILTERS[0]].concat(groupFilters(store.channels)), [store.channels]);
+	guideFiltersRef.current = guideFilters;
 
 	return (
 		<div className={css.page} ref={pageRef}>
@@ -1206,7 +1217,7 @@ const LiveTV = ({onPlayChannel, onRecordings, backHandlerRef}) => {
 							onKeyDown={handleChipKeyDown}
 							onClick={() => handleFilterSelect(filter.key)} // eslint-disable-line react/jsx-no-bind
 						>
-							{$L(filter.label)}
+							{isGroupFilter(filter.key) ? filter.label : $L(filter.label)}
 						</SpottableButton>
 					))}
 				</div>

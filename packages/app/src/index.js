@@ -8,6 +8,7 @@ import {createRoot, hydrateRoot} from 'react-dom/client';
 
 import App, {localeStringsReady} from './App';
 import {isTizen} from './platform';
+import {installRemoteHelpKeys} from './components/RemoteHelp/remoteHelpKeys';
 import {registerKeys, ESSENTIAL_KEY_NAMES, paceArrowKeys} from './utils/keys';
 import {scrollAtPointerEdges} from './utils/pointerEdgeScroll';
 
@@ -49,6 +50,8 @@ if (isTizen()) {
 const appElement = (<App />);
 
 if (typeof window !== 'undefined') {
+	// First, so the help sheet can hold every key while it's up.
+	installRemoteHelpKeys(window);
 	paceArrowKeys();
 	scrollAtPointerEdges();
 	// The locale strings arrive in their own chunk, so hold the first render until

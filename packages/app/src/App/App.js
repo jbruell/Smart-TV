@@ -23,7 +23,7 @@ import {setTmdbThumbsAvailable} from '../utils/tmdbThumb';
 import {configureIncompleteRecordings} from '../services/incompleteRecordings';
 import serverLogger from '../services/serverLogger';
 import * as remoteControl from '../services/remoteControl';
-import {isBackKey, KEYS} from '../utils/keys';
+import {isBackKey, isExitKey, KEYS} from '../utils/keys';
 import {drawsStage} from '../views/Details/stage/stageRules';
 import {QUICK_LOOK_ID} from '../views/Details/quickLook/quickLookRules';
 import {applyPerfTier} from '../utils/perfTier';
@@ -47,7 +47,6 @@ import UpdateNotification from '../components/UpdateNotification';
 import {ItemMenuProvider} from '../components/ItemContextMenu';
 import SeerrNotificationToast from '../components/SeerrNotificationToast';
 import ServerMessagesDialog from '../components/ServerMessagesDialog';
-import DebugOverlay from '../components/DebugOverlay'; // Red Button on TV remote toggles this
 import NavBar from '../components/NavBar';
 import Sidebar from '../components/Sidebar';
 import AccountModal from '../components/AccountModal';
@@ -55,6 +54,7 @@ import ExitDialog from '../components/ExitDialog';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Screensaver from '../components/Screensaver';
 import SeasonalTheme from '../components/SeasonalTheme';
+import RemoteHelp from '../components/RemoteHelp';
 import NoConnection from '../components/NoConnection/NoConnection';
 import SyncPlayDialog from '../components/SyncPlayDialog';
 import PhotoViewer from '../components/PhotoViewer';
@@ -893,6 +893,7 @@ const AppContent = (props) => {
 		setQuickLook((open) => (open ? {...open, autoPlay: false} : open));
 	}, []);
 
+	const remoteAppRef = useRef(null);
 	useEffect(() => {
 		const handleKeyDown = (e) => {
 			// An arrow press means the user is done pointing. Spotlight flips
@@ -912,6 +913,16 @@ const AppContent = (props) => {
 				return;
 			}
 			if (e.keyCode === KEYS.BACKSPACE && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
+				return;
+			}
+			// The remote's Guide key opens the live TV guide from anywhere, and Exit goes home rather
+			// than closing the app. The player handles both itself.
+			const remapped = e.keyCode === KEYS.GUIDE || isExitKey(e);
+			if (remapped && panelIndex !== PANELS.PLAYER && panelIndex !== PANELS.LOGIN &&
+				!isPinGateActive && !isPinChecking && !timesUp && !setupWizardActive) {
+				e.preventDefault();
+				if (isExitKey(e)) remoteAppRef.current?.goHome();
+				else if (panelIndex !== PANELS.LIVETV) navigateTo(PANELS.LIVETV);
 				return;
 			}
 			// The panel under Quick Look's drawer doesn't take the remote. A press that finds focus there,
@@ -1009,7 +1020,7 @@ const AppContent = (props) => {
 
 		window.addEventListener('keydown', handleKeyDown, true);
 		return () => window.removeEventListener('keydown', handleKeyDown, true);
-	}, [panelIndex, handleBack, performAppCleanup, settings.exitConfirmation, showAccountModal, showServerMessages, showExitDialog, showSettingsPanel, showShuffleOverlay, photoViewerItem, reading, unreadableBook, isPinGateActive, isPinChecking, timesUp, setupWizardActive, updateInfo, dismissUpdate, syncPlayDialogOpen, closeSyncPlay, quickLookShown, closeQuickLook]);
+	}, [panelIndex, navigateTo, handleBack, performAppCleanup, settings.exitConfirmation, showAccountModal, showServerMessages, showExitDialog, showSettingsPanel, showShuffleOverlay, photoViewerItem, reading, unreadableBook, isPinGateActive, isPinChecking, timesUp, setupWizardActive, updateInfo, dismissUpdate, syncPlayDialogOpen, closeSyncPlay, quickLookShown, closeQuickLook]);
 
 	// The account stays saved, so it can be chosen again from the picker once its hours are back.
 	const handleTimesUpSwitchUser = useCallback(() => {
@@ -1491,6 +1502,15 @@ const AppContent = (props) => {
 		setPanelIndex(PANELS.BROWSE);
 	}, []);
 
+	// Exit in the player goes home, past wherever playback was started from.
+	const handlePlayerHome = useCallback(() => {
+		setIsPlayerPaused(false);
+		setPlayingItem(null);
+		setPlaybackOptions(null);
+		setIsResume(false);
+		handleHome();
+	}, [handleHome]);
+
 	// Home pressed in the navigation while Home is showing draws a new media bar set.
 	const handleNavHome = useCallback(() => {
 		if (panelIndex === PANELS.BROWSE) {
@@ -1548,7 +1568,6 @@ const AppContent = (props) => {
 		});
 	}, [api, playingItem]);
 
-	const remoteAppRef = useRef(null);
 	const [remoteSearch, setRemoteSearch] = useState(null);
 	const clearForRemote = () => {
 		dismissScreensaver();
@@ -2150,6 +2169,7 @@ const AppContent = (props) => {
 							onEnded={handlePlayerEnd}
 							onBack={handlePlayerEnd}
 							onGuide={handlePlayerGuide}
+							onHome={handlePlayerHome}
 							onPlayNext={handlePlayNext}
 							onSelectPerson={handleSelectPersonFromPlayer}
 							onPausedChange={setIsPlayerPaused}
@@ -2312,7 +2332,7 @@ const AppContent = (props) => {
 				<SeasonalTheme theme={settings.seasonalTheme} density={settings.seasonalDensity} follower={settings.seasonalFollower} />
 			)}
 			<NoConnection />
-			<DebugOverlay />
+			<RemoteHelp />
 			{connectionState !== 'connected' && isAuthenticated && (
 				<div className={css.connectionBanner}>
 					<span>{connectionState === 'reconnecting' ? $L('Reconnecting to server...') : $L('Lost connection to server')}</span>

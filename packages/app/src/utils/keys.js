@@ -37,6 +37,8 @@ const TIZEN_KEYS = {
 	BLUE: 406,
 	CHANNEL_UP: 427,
 	CHANNEL_DOWN: 428,
+	GUIDE: 458,
+	E_MANUAL: 10146,
 };
 
 // The channel buttons reach the page as Page Up and Page Down, and the Magic Remote's pointer
@@ -80,9 +82,25 @@ const XBOX_KEYS = {
 
 const PLATFORM_KEYS = {tizen: TIZEN_KEYS, webos: WEBOS_KEYS, vega: VEGA_KEYS, xbox: XBOX_KEYS};
 
+// A key whose code differs between Samsung remotes, as this TV reports it.
+const tizenKeyCode = (...names) => {
+	if (getPlatform() !== 'tizen' || typeof tizen === 'undefined' || !tizen.tvinputdevice) return undefined;
+	for (const name of names) {
+		try {
+			const key = tizen.tvinputdevice.getKey(name);
+			if (key) return key.code;
+		} catch (e) {
+			// Not a key this set has
+		}
+	}
+	return undefined;
+};
+
 export const KEYS = {
 	...STANDARD_KEYS,
 	...(PLATFORM_KEYS[getPlatform()] || WEBOS_KEYS),
+	PRE_CH: tizenKeyCode('PreviousChannel'),
+	TTX: tizenKeyCode('TTXMixSubte', 'Teletext')
 };
 
 // Fast forward and rewind, and the track and page keys a remote may carry, page a list. 1 is a
@@ -159,7 +177,14 @@ export const ESSENTIAL_KEY_NAMES = [
 	'Info',
 	'Search',
 	'ChannelUp',
-	'ChannelDown'
+	'ChannelDown',
+	'Guide',
+	'E-Manual',
+	'Exit',
+	'PreviousChannel',
+	'TTXMixSubte',
+	'Teletext',
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'
 ];
 
 export const registerKeys = (keyNames = ESSENTIAL_KEY_NAMES) => {

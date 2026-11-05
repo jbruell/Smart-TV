@@ -14,7 +14,7 @@ import {
 import {useSettings} from '../../context/SettingsContext';
 import {useSyncPlay} from '../../context/SyncPlayContext';
 import * as syncPlayService from '../../services/syncPlay';
-import {KEYS, isBackKey, isMediaKey} from '../../utils/keys';
+import {KEYS, isBackKey, isExitKey, isMediaKey} from '../../utils/keys';
 import {isPreroll, nextInQueue, shouldAutoAdvance} from '../../utils/cinemaMode';
 import {driftMs, needsSeek, correctionOptions, DRIFT_CHECK_MS, GROUP_SEEK_SETTLE_TIMEOUT_MS} from '../../utils/syncDrift';
 import {createReadyGate} from '../../utils/syncReady';
@@ -120,7 +120,7 @@ const getRootFontSizePx = () => {
  * playback. AVPlay renders on a platform multimedia layer BEHIND the web engine;
  * the web layer must be transparent in the video area for the content to show through.
  */
-const Player = ({item, resume, initialMediaSourceId, initialAudioIndex, initialSubtitleIndex, initialStartPositionTicks, initialQuality, forceTranscode, onEnded, onBack, onGuide, onPlayNext, onSelectPerson, audioPlaylist, videoQueue, liveTvChannels, onPausedChange, background, onBackground}) => {
+const Player = ({item, resume, initialMediaSourceId, initialAudioIndex, initialSubtitleIndex, initialStartPositionTicks, initialQuality, forceTranscode, onEnded, onBack, onGuide, onHome, onPlayNext, onSelectPerson, audioPlaylist, videoQueue, liveTvChannels, onPausedChange, background, onBackground}) => {
 	const {settings, updateSetting} = useSettings();
 	const {isInGroup, lastCommand} = useSyncPlay();
 	const syncPlayCommandRef = useRef(false);
@@ -1871,10 +1871,11 @@ const Player = ({item, resume, initialMediaSourceId, initialAudioIndex, initialS
 	});
 	const {active: cinemaSkipActive, update: updateCinemaSkip} = cinemaSkip;
 
-	const {carouselOpenRef, openCarousel, stepChannel, markChannelPlaying, refreshRecordings, carouselProps} = useChannelCarousel({
-		item, isLiveTV, liveTvChannels, sortBy: settings.liveTvChannelSortBy,
+	const handleGroupChange = useCallback((key) => updateSetting('liveTvGuideFilter', key), [updateSetting]);
+	const {carouselOpenRef, openCarousel, stepChannel, stepGroup, markChannelPlaying, refreshRecordings, carouselProps} = useChannelCarousel({
+		item, isLiveTV, liveTvChannels, sortBy: settings.liveTvChannelSortBy, groupKey: settings.liveTvGuideFilter,
 		error, controlsVisible, showControls, hideControls, setFocusRow,
-		onSwitchChannel: onPlayNextWithCleanup
+		onSwitchChannel: onPlayNextWithCleanup, onGroupChange: handleGroupChange
 	});
 	refreshCarouselRecordingsRef.current = refreshRecordings;
 
@@ -2110,6 +2111,11 @@ const Player = ({item, resume, initialMediaSourceId, initialAudioIndex, initialS
 		await teardownPlayback();
 		(onGuide || onBack)?.();
 	}, [teardownPlayback, onGuide, onBack]);
+
+	const handleGoHome = useCallback(async () => {
+		await teardownPlayback();
+		(onHome || onBack)?.();
+	}, [teardownPlayback, onHome, onBack]);
 
 	useEffect(() => {
 		handleBackRef.current = handleBack;
@@ -3111,6 +3117,21 @@ const Player = ({item, resume, initialMediaSourceId, initialAudioIndex, initialS
 			const key = e.key || e.keyCode;
 			// The channel carousel takes every key while it's up.
 			if (carouselOpenRef.current) return;
+
+			if (e.keyCode === KEYS.GUIDE || isExitKey(e)) {
+				e.preventDefault();
+				e.stopPropagation();
+				if (isExitKey(e)) handleGoHome();
+				else handleOpenGuide();
+				return;
+			}
+			// Red and green step to the previous and next channel group.
+			if (isLiveTV && !activeModal && (e.keyCode === KEYS.RED || e.keyCode === KEYS.GREEN)) {
+				e.preventDefault();
+				e.stopPropagation();
+				stepGroup(e.keyCode === KEYS.GREEN ? 1 : -1);
+				return;
+			}
 
 			// Media playback keys (Tizen remote)
 			if (e.keyCode === KEYS.PLAY) {

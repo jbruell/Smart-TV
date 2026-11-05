@@ -55,3 +55,19 @@ export const moveCursor = (state, direction) => {
 };
 
 export const clearText = () => makeState('');
+
+// The remote's number keys type letters the way a phone keypad does. Pressing the same key again
+// soon after swaps the letter just typed for the next one on that key.
+export const MULTI_TAP = {
+	0: ' 0', 1: '.,-\'@1', 2: 'abc2', 3: 'def3', 4: 'ghi4',
+	5: 'jkl5', 6: 'mno6', 7: 'pqrs7', 8: 'tuv8', 9: 'wxyz9'
+};
+
+// tap is the previous press when it may still be cycled, else null.
+export const multiTap = (state, tap, digit, upper) => {
+	const letters = MULTI_TAP[digit];
+	const repeat = tap && tap.digit === digit;
+	const index = repeat ? (tap.index + 1) % letters.length : 0;
+	const letter = upper ? letters[index].toUpperCase() : letters[index];
+	return {state: insertText(repeat ? backspace(state) : state, letter), tap: {digit, index}};
+};

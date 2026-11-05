@@ -3,7 +3,8 @@ import $L from '@enact/i18n/$L';
 import {Pause} from '@enact/spotlight/Pause';
 
 import {useSettings} from '../../context/SettingsContext';
-import {isXbox} from '../../platform';
+import {getPlatform, isXbox} from '../../platform';
+import {KEYS} from '../../utils/keys';
 import {toCssColor, toCssColorWithAlpha, toRgbTriplet, inkOn, radiusToCss, shadowToCss} from '../../theme/themeSpec';
 import {getPerfTier} from '../../utils/perfTier';
 import {getKeyboardStyleOptions} from '../../views/Settings/settingsOptions';
@@ -30,6 +31,11 @@ const URL_CHIPS = ['https://', 'http://', 'www.', 'jellyfin', '.com', '.org', '.
 const EMAIL_CHIPS = ['@gmail.com', '@outlook.com', '@icloud.com', '@yahoo.com', '.com', '.'];
 const SUGGESTION_DEBOUNCE_MS = 280;
 const LONG_PRESS_MS = 500;
+// A number key pressed again within this long cycles the letter it just typed.
+const MULTI_TAP_MS = 1200;
+// The bottom row is the remote's: TTX/MIX left of 0 deletes, PRE-CH right of it is OK.
+const KEYPAD_ROWS = [[1, 2, 3], [4, 5, 6], [7, 8, 9], ['TTX', 0, 'PRE-CH']];
+const KEYPAD_ACTIONS = {'TTX': '\u232B', 'PRE-CH': 'OK'};
 const MIN_POPUP_EDGE_GAP = 16;
 
 // The shortcuts the Xbox's own keyboard takes, by the key each one presses. X and Menu
@@ -403,6 +409,7 @@ class TVKeyboardHost extends Component {
 		this.state = {
 			session: null,
 			textState: textModel.makeState(''),
+			tap: null,
 			shifted: false,
 			numericPage: false,
 			row: 0,
@@ -449,6 +456,7 @@ class TVKeyboardHost extends Component {
 		this.setState({
 			session: options,
 			textState: textModel.makeState(options.value || ''),
+			tap: null,
 			shifted: false,
 			numericPage: false,
 			row: 0,
@@ -486,6 +494,8 @@ class TVKeyboardHost extends Component {
 		clearTimeout(this.suggestTimer);
 		clearTimeout(this.holdTimer);
 		clearTimeout(this.enterHoldTimer);
+		clearTimeout(this.tapTimer);
+		this.tap = null;
 		this.suggestTimer = null;
 		this.holdTimer = null;
 		this.enterHoldTimer = null;
@@ -618,6 +628,73 @@ class TVKeyboardHost extends Component {
 		});
 		if (next.text !== textState.text) this.scheduleSuggestions(next.text);
 		session.onChange?.(next.text, next.cursor);
+	}
+
+	// The remote's number keys type letters, phone keypad style, except where only digits belong.
+	typeDigit(digit) {
+		const {session, textState, shifted} = this.state;
+		if (!this.usesMultiTap()) {
+			this.insert(String(digit));
+			return;
+		}
+		const now = Date.now();
+		const tap = this.tap && now - this.tap.at < MULTI_TAP_MS ? this.tap : null;
+		const maxLength = Number(session.maxLength);
+		if (!(tap && tap.digit === digit) && maxLength > 0 && textState.text.length >= maxLength) return;
+		const typed = textModel.multiTap(textState, tap, digit, shifted);
+		this.tap = {...typed.tap, at: now};
+		this.setState({tap: typed.tap});
+		clearTimeout(this.tapTimer);
+		this.tapTimer = setTimeout(() => this.setState({tap: null}), MULTI_TAP_MS);
+		this.applyText(typed.state);
+	}
+
+	usesMultiTap() {
+		const {session, numericPage} = this.state;
+		return getPlatform() === 'tizen' && session.purpose !== 'numeric' && !numericPage && !this.usesNumberPad();
+	}
+
+	// A phone keypad in the corner, so the letters on each number key don't have to be known by
+	// heart. The key being cycled lights up, with the letter it's on.
+	renderKeypad(palette) {
+		if (!this.usesMultiTap()) return null;
+		const {tap, shifted} = this.state;
+		return (
+			<div className={css.keypad} style={{background: palette.panel, border: palette.panelBorder}}>
+				{KEYPAD_ROWS.map((row) => (
+					<div key={row.join('')} className={css.keypadRow}>
+						{row.map((digit) => {
+							if (KEYPAD_ACTIONS[digit]) {
+								return (
+									<div key={digit} className={css.keypadKey} style={{background: palette.idleKey, color: palette.textPrimary}}>
+										<span className={css.keypadDigit}>{KEYPAD_ACTIONS[digit]}</span>
+										<span className={css.keypadLetters}>{digit}</span>
+									</div>
+								);
+							}
+							const letters = textModel.MULTI_TAP[digit];
+							const active = tap && tap.digit === digit;
+							return (
+								<div
+									key={digit}
+									className={css.keypadKey}
+									style={active ? {background: palette.accent, color: palette.accentInk} : {background: palette.idleKey, color: palette.textPrimary}}
+								>
+									<span className={css.keypadDigit}>{digit}</span>
+									<span className={css.keypadLetters}>
+										{letters.slice(0, -1).split('').map((letter, index) => (
+											<span key={index} className={active && tap.index === index ? css.keypadLetterOn : ''}>
+												{letter === ' ' ? '\u2423' : (shifted ? letter.toUpperCase() : letter)}
+											</span>
+										))}
+									</span>
+								</div>
+							);
+						})}
+					</div>
+				))}
+			</div>
+		);
 	}
 
 	insert(value) {
@@ -835,6 +912,12 @@ class TVKeyboardHost extends Component {
 		const code = e.keyCode || e.which;
 		const {popup} = this.state;
 		const isBack = code === 461 || code === 10009 || code === 27;
+		const isDigit = code >= 48 && code <= 57 && getPlatform() === 'tizen';
+		if (!isDigit && this.tap) {
+			this.tap = null;
+			clearTimeout(this.tapTimer);
+			this.setState({tap: null});
+		}
 
 		if (code === 13) {
 			if (this.enterHeld) {
@@ -887,12 +970,16 @@ class TVKeyboardHost extends Component {
 			return;
 		}
 
-		if (code === 8) {
+		if (code === 8 || code === KEYS.TTX) {
 			this.act('BACKSPACE');
 			return;
 		}
-		// The Xbox controller's Menu button, as a quicker way to the done key
-		if (code === 93) {
+		if (isDigit) {
+			this.typeDigit(code - 48);
+			return;
+		}
+		// The Xbox controller's Menu button, and PRE-CH on a Samsung remote, as a quicker way to the done key
+		if (code === 93 || code === KEYS.PRE_CH) {
 			this.act('DONE');
 			return;
 		}
@@ -1236,6 +1323,7 @@ class TVKeyboardHost extends Component {
 		const glow = high ? `${palette.accentRing}, ${palette.accentGlow}` : palette.accentRing;
 		return (
 			<div className={`${css.overlay} ${css.dockOverlay}`} onClick={this.handleOverlayClick}>
+				{this.renderKeypad(palette)}
 				<div
 					className={css.dock}
 					ref={this.setPanelRef}
@@ -1265,6 +1353,7 @@ class TVKeyboardHost extends Component {
 			const glassGlow = high ? GLASS_GLOW : 'none';
 			return (
 				<div className={`${css.overlay} ${css.glassOverlay}`} onClick={this.handleOverlayClick}>
+					{this.renderKeypad(palette)}
 					<div
 						className={`${css.panel} ${css.glassPanel} ${narrow ? css.glassPanelNarrow : ''}`}
 						ref={this.setPanelRef}
@@ -1280,6 +1369,7 @@ class TVKeyboardHost extends Component {
 		const glow = high ? palette.focusGlow : 'none';
 		return (
 			<div className={css.overlay} onClick={this.handleOverlayClick}>
+				{this.renderKeypad(palette)}
 				<div
 					className={`${css.panel} ${narrow ? css.panelNarrow : ''}`}
 					ref={this.setPanelRef}

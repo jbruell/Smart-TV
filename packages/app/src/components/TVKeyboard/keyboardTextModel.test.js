@@ -1,4 +1,4 @@
-import {makeState, insertText, backspace, moveCursor, clearText} from './keyboardTextModel';
+import {makeState, insertText, backspace, moveCursor, clearText, multiTap} from './keyboardTextModel';
 
 describe('keyboardTextModel', () => {
 	test('insert lands at the caret', () => {
@@ -53,5 +53,20 @@ describe('keyboardTextModel', () => {
 		const state = clearText();
 		expect(state.text).toBe('');
 		expect(state.cursor).toBe(0);
+	});
+});
+
+describe('multiTap', () => {
+	test('cycles the letters on a key and starts over on another', () => {
+		let typed = multiTap(makeState('a'), null, 2, false);
+		typed = multiTap(typed.state, typed.tap, 2, false);
+		expect(typed.state.text).toBe('ab');
+		typed = multiTap(typed.state, typed.tap, 2, true);
+		typed = multiTap(typed.state, typed.tap, 2, true);
+		expect(typed.state.text).toBe('a2');
+		typed = multiTap(typed.state, typed.tap, 2, false);
+		expect(typed.state.text).toBe('aa');
+		typed = multiTap(typed.state, typed.tap, 0, false);
+		expect(typed.state).toEqual({text: 'aa ', cursor: 3});
 	});
 });

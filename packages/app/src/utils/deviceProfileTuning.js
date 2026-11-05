@@ -175,3 +175,21 @@ export const preferMpegTsHlsForLive = (profile) => {
 	const others = entries.filter((entry) => !isTsVideoHls(entry));
 	return {...profile, TranscodingProfiles: [...others.slice(0, first), ...lead, ...others.slice(first)]};
 };
+
+// The server answers a live HLS playlist only once MinSegments segments are written, and live
+// segments are written in real time, so every extra one is a segment length more of waiting.
+export const startLiveHlsSooner = (profile) => {
+	const entries = profile?.TranscodingProfiles;
+	if (!Array.isArray(entries)) return profile;
+	return {...profile, TranscodingProfiles: entries.map((entry) => (isVideoHls(entry) ? {...entry, MinSegments: '1'} : entry))};
+};
+
+// Broadcast H.264 is mostly interlaced, and the TV deinterlaces it itself, so live TV doesn't have
+// the server encode every such channel again.
+export const allowInterlacedLive = (profile) => {
+	const entries = profile?.CodecProfiles;
+	if (!Array.isArray(entries)) return profile;
+	return {...profile, CodecProfiles: entries.map((entry) => (Array.isArray(entry.Conditions)
+		? {...entry, Conditions: entry.Conditions.filter((condition) => condition.Property !== 'IsInterlaced')}
+		: entry))};
+};

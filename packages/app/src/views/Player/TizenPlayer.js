@@ -702,7 +702,8 @@ const Player = ({item, resume, initialMediaSourceId, initialAudioIndex, initialS
 		avplayOpen(url);
 		currentUrlRef.current = url;
 		applyDisplayWindow();
-		avplaySetBufferingParams({bitrate: mediaSource?.Bitrate});
+		// Live starts on the least AVPlay accepts, since the playlist only holds a segment or two.
+		avplaySetBufferingParams({bitrate: mediaSource?.Bitrate, initialSeconds: isLiveTV ? 4 : undefined});
 
 		// Samsung AVPlay rejects some Jellyfin transcode endpoints with the
 		// default system User-Agent. USER_AGENT first, USERAGENT fallback for older firmwares.

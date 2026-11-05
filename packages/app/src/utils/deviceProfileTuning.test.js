@@ -1,4 +1,4 @@
-import {applyProfileTuning, canTranscodeAudioCodecAway, preferMpegTsHlsForLive, transcodesAudioCodec} from './deviceProfileTuning';
+import {allowInterlacedLive, applyProfileTuning, canTranscodeAudioCodecAway, preferMpegTsHlsForLive, startLiveHlsSooner, transcodesAudioCodec} from './deviceProfileTuning';
 
 const profile = () => ({
 	SubtitleProfiles: [
@@ -202,4 +202,19 @@ describe('preferMpegTsHlsForLive', () => {
 		const tizen = {TranscodingProfiles: [hls('ts'), hls('mp4')]};
 		expect(preferMpegTsHlsForLive(tizen)).toBe(tizen);
 	});
+});
+
+test('live HLS waits for one segment, and other transcodes keep theirs', () => {
+	const hls = {Type: 'Video', Protocol: 'hls', Container: 'ts', MinSegments: '2', SegmentLength: '6'};
+	const mp3 = {Type: 'Audio', Protocol: 'http', Container: 'mp3'};
+	const tuned = startLiveHlsSooner({TranscodingProfiles: [hls, mp3]});
+	expect(tuned.TranscodingProfiles).toEqual([{...hls, MinSegments: '1'}, mp3]);
+	expect(hls.MinSegments).toBe('2');
+});
+
+test('live TV drops only the interlaced condition', () => {
+	const level = {Condition: 'LessThanEqual', Property: 'VideoLevel', Value: '51'};
+	const interlaced = {Condition: 'NotEquals', Property: 'IsInterlaced', Value: 'true'};
+	const tuned = allowInterlacedLive({CodecProfiles: [{Type: 'Video', Codec: 'h264', Conditions: [interlaced, level]}]});
+	expect(tuned.CodecProfiles[0].Conditions).toEqual([level]);
 });
